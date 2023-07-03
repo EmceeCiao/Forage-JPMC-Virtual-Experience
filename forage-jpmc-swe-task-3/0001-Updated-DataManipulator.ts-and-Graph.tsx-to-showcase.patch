@@ -1,0 +1,130 @@
+From 453f4700f3c398edeb0d1b357cc494056457a0a4 Mon Sep 17 00:00:00 2001
+From: Emcee_Ciao <mchowdhury1224@gmail.com>
+Date: Sun, 2 Jul 2023 17:39:31 -0400
+Subject: [PATCH] Updated DataManipulator.ts and Graph.tsx to showcase ratio
+ between stocks  and provide alerts
+
+---
+ src/DataManipulator.ts | 39 ++++++++++++++++++++++++++++-----------
+ src/Graph.tsx          | 34 +++++++++++++++++++++++++---------
+ 2 files changed, 53 insertions(+), 20 deletions(-)
+
+diff --git a/src/DataManipulator.ts b/src/DataManipulator.ts
+index 7f62295..21081b0 100644
+--- a/src/DataManipulator.ts
++++ b/src/DataManipulator.ts
+@@ -1,20 +1,37 @@
+-import { ServerRespond } from './DataStreamer';
++import {ServerRespond} from './DataStreamer';
+ 
++//Updating Row Interface to match Schema in Graph.tsx
+ export interface Row {
+-  stock: string,
+-  top_ask_price: number,
++  price_abc: number,
++  price_def: number,
++  upperbound: number,
++  lowerbound: number,
++  alert: number | undefined
++  ratio: number,
+   timestamp: Date,
+ }
+ 
+ 
+ export class DataManipulator {
+-  static generateRow(serverResponds: ServerRespond[]) {
+-    return serverResponds.map((el: any) => {
++  static generateRow(serverRespond: ServerRespond[]): Row {
++  //Calculating price_abc, price_def, upperbound, lowerbound, ratio
++  //upperbound and lowerbound will be +- 5 percent, since doing ratio, 1 is 100 percent
++     const price_abc = (serverRespond[0].top_ask.price + serverRespond[0].top_bid.price)/2;
++     const price_def = (serverRespond[1].top_ask.price + serverRespond[1].top_bid.price)/2;
++     const upperbound = 1 + 0.05;
++     const lowerbound = 1 - 0.05;
++     const ratio = price_abc/price_def;
+       return {
+-        stock: el.stock,
+-        top_ask_price: el.top_ask && el.top_ask.price || 0,
+-        timestamp: el.timestamp,
++        price_abc,
++        price_def,
++        ratio,
++        upperbound,
++        lowerbound,
++        //Ternary Operator to have timestamp be more recent
++        timestamp: serverRespond[0].timestamp > serverRespond[1].timestamp ?
++        serverRespond[0].timestamp : serverRespond[1].timestamp,
++        //Ternary Operator to have alert be set
++        alert: (ratio > upperbound || ratio < lowerbound)? ratio : undefined,
+       };
+-    })
+-  }
+-}
++      }
++      }
+diff --git a/src/Graph.tsx b/src/Graph.tsx
+index 277797d..f224bbc 100644
+--- a/src/Graph.tsx
++++ b/src/Graph.tsx
+@@ -23,10 +23,17 @@ class Graph extends Component<IProps, {}> {
+     const elem = document.getElementsByTagName('perspective-viewer')[0] as unknown as PerspectiveViewerElement;
+ 
+     const schema = {
+-      stock: 'string',
+-      top_ask_price: 'float',
+-      top_bid_price: 'float',
++      //Getting rid of top_ask_price and top_bid_price since we just care about the ratio this time
++      //Also getting rid of stock in schema as we don't care about identifying between the two
+       timestamp: 'date',
++      //Adding ratio, upper bound and lower bound, and the alert for trader to see on graph
++      //Ratio will be price of abc/def
++      ratio: 'float',
++      upperbound: 'float',
++      lowerbound: 'float',
++      price_abc: 'float',
++      price_def: 'float',
++      alert: 'float',
+     };
+ 
+     if (window.perspective && window.perspective.worker()) {
+@@ -36,13 +43,19 @@ class Graph extends Component<IProps, {}> {
+       // Load the `table` in the `<perspective-viewer>` DOM reference.
+       elem.load(this.table);
+       elem.setAttribute('view', 'y_line');
+-      elem.setAttribute('column-pivots', '["stock"]');
++      //Removed Column pivots setAttribute as we had removed stock from schema
+       elem.setAttribute('row-pivots', '["timestamp"]');
+-      elem.setAttribute('columns', '["top_ask_price"]');
++      //Need to modify columns to reflect the 4 things we want to see on our graph ratio, upper and lower bound
++      elem.setAttribute('columns', '["upperbound","ratio", "lowerbound", "alert"]');
+       elem.setAttribute('aggregates', JSON.stringify({
+-        stock: 'distinctcount',
+-        top_ask_price: 'avg',
+-        top_bid_price: 'avg',
++        //Getting rid of top_ask_price, top_bid_price, and stock since unnecessary info now
++        //Modifying Aggregates to contain the things we now want to see within the graph
++        lowerbound: 'avg',
++        upperbound: 'avg',
++        price_abc: 'avg',
++        price_def: 'avg',
++        ratio: 'avg',
++        alert: 'avg',
+         timestamp: 'distinct count',
+       }));
+     }
+@@ -50,8 +63,11 @@ class Graph extends Component<IProps, {}> {
+ 
+   componentDidUpdate() {
+     if (this.table) {
+-      this.table.update(
++      this.table.update([
+         DataManipulator.generateRow(this.props.data),
++        ] as unknown as 'TableData'
++        //The program did not like unknown as TableData and wouldn't compile but changing it
++        //to 'TableData' seemed to fix the issue
+       );
+     }
+   }
+-- 
+2.23.0
+

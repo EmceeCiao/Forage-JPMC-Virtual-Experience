@@ -1,0 +1,129 @@
+From bebf805053e4c3c532873acaff77ca4a19b51275 Mon Sep 17 00:00:00 2001
+From: Emcee_Ciao <mchowdhury1224@gmail.com>
+Date: Sun, 2 Jul 2023 02:41:58 -0400
+Subject: [PATCH 1/2] Changed App.tsx to be able to show a graph and constantly
+ request data every 100ms till the server does not return anymore data
+
+---
+ src/App.tsx | 32 ++++++++++++++++++++++++++++----
+ 1 file changed, 28 insertions(+), 4 deletions(-)
+
+diff --git a/src/App.tsx b/src/App.tsx
+index 0728518..58021f3 100755
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -8,6 +8,10 @@ import './App.css';
+  */
+ interface IState {
+   data: ServerRespond[],
++
++  // Adding showGraph Boolean Property Below:
++
++  showGraph: boolean,
+ }
+ 
+ /**
+@@ -22,6 +26,8 @@ class App extends Component<{}, IState> {
+       // data saves the server responds.
+       // We use this state to parse data down to the child element (Graph) as element property
+       data: [],
++      // hiding initial state of graph
++      showGraph: false,
+     };
+   }
+ 
+@@ -29,19 +35,37 @@ class App extends Component<{}, IState> {
+    * Render Graph react component with state.data parse as property data
+    */
+   renderGraph() {
++  //Tried doing this.showGraph without state and it didn't work
++  //Doing this.state.showGraph in order to not have it render before button is clicked
++    if (this.state.showGraph) {
+     return (<Graph data={this.state.data}/>)
+   }
++  }
+ 
+   /**
+    * Get new data from server and update the state with the new data
+    */
+   getDataFromServer() {
+-    DataStreamer.getData((serverResponds: ServerRespond[]) => {
++  // Defining x in order to serve as a stopping condition later in tandem with clearInterval
++    let x = 0;
++    const interval = setInterval(() => {
++        DataStreamer.getData((serverResponds: ServerRespond[]) => {
+       // Update the state by creating a new array of data that consists of
+       // Previous data in the state and the new data from server
+-      this.setState({ data: [...this.state.data, ...serverResponds] });
+-    });
+-  }
++      // set showGraph to true when setting state as we want to see the graph when we hit start streaming
++      // Figured out that using set interval on the entire function leads to values not showing after a while
++            this.setState({
++        data: serverResponds,
++        showGraph: true,
++      });
++     });
++     x++;
++     //This way once we repeat the function 500 times it'll stop
++     if(x > 500){
++     clearInterval(interval);
++     }
++    }, 100);
++}
+ 
+   /**
+    * Render the App react component
+-- 
+2.23.0
+
+
+From 2b2216d7006c9321b8749ac7f33ed3e0e95ace39 Mon Sep 17 00:00:00 2001
+From: Emcee_Ciao <mchowdhury1224@gmail.com>
+Date: Sun, 2 Jul 2023 02:43:43 -0400
+Subject: [PATCH 2/2] Updated Graph.tsx to create a line graph of the data
+ we've been requesting
+
+---
+ src/Graph.tsx | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/src/Graph.tsx b/src/Graph.tsx
+index 3b2a7da..50f66fb 100644
+--- a/src/Graph.tsx
++++ b/src/Graph.tsx
+@@ -14,7 +14,7 @@ interface IProps {
+  * Perspective library adds load to HTMLElement prototype.
+  * This interface acts as a wrapper for Typescript compiler.
+  */
+-interface PerspectiveViewerElement {
++interface PerspectiveViewerElement extends HTMLElement{
+   load: (table: Table) => void,
+ }
+ 
+@@ -32,7 +32,13 @@ class Graph extends Component<IProps, {}> {
+ 
+   componentDidMount() {
+     // Get element to attach the table from the DOM.
+-    const elem: PerspectiveViewerElement = document.getElementsByTagName('perspective-viewer')[0] as unknown as PerspectiveViewerElement;
++    const elem = document.getElementsByTagName('perspective-viewer')[0] as unknown as PerspectiveViewerElement;
++    //Adding More Attributes to element as this is what gets graphed
++    elem.setAttribute('view','y_line');
++    elem.setAttribute('column-pivots', '["stock"]');
++    elem.setAttribute('row-pivots','["timestamp"]');
++    elem.setAttribute('columns','["top_ask_price"]');
++    elem.setAttribute('aggregates', '{"stock": "distinct count", "top_price_ask": "avg", "top_bid_price": "avg", "timestamp": "distinct count"}');
+ 
+     const schema = {
+       stock: 'string',
+@@ -41,6 +47,7 @@ class Graph extends Component<IProps, {}> {
+       timestamp: 'date',
+     };
+ 
++
+     if (window.perspective && window.perspective.worker()) {
+       this.table = window.perspective.worker().table(schema);
+     }
+-- 
+2.23.0
+
